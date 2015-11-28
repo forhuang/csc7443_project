@@ -2,22 +2,21 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <math.h>
 
 #include <GL/glut.h>
 
-#define size 80
-#define SIZE_X 128
-#define SIZE_Y 128
+#define SIZE 80
+#define IMGSIZE 32
 
 using namespace std;
 
-double dataDensity[size][size][size];
+double dataDensity[SIZE][SIZE][SIZE];
 double maxValue = 0, minValue = 999;
 
-double v[] = {0.0, 0.0, 1.5};
-double xmin = -1.0, xmax = 1.0;
-double ymin = -1.0, ymax = 1.0;
-float image[SIZE_X][SIZE_Y][3];
+double opacity = 0.1;
+double dataColor[SIZE][SIZE][4];
+double imgColor[IMGSIZE][IMGSIZE][4];
 
 void readFile() {
 	ifstream myfile("DataDensity");
@@ -30,13 +29,12 @@ void readFile() {
 			istringstream iss(line);
 			if (len_line > 2) {
 				while (iss >> d) {
-					cout << i << ", "<< j << ", " << k << ", " << d << endl;
 					if (d > maxValue) maxValue = d;
 					if (d < minValue) minValue = d;
 					dataDensity[i][j][k] = d;
-					if (k == size-1) {
+					if (k == SIZE-1) {
 						k = 0;
-						if (j == size-1) {
+						if (j == SIZE-1) {
 							j = 0;
 							i += 1;
 						}
@@ -50,9 +48,111 @@ void readFile() {
 		myfile.close();
 	}
 	else cout<<"Unable to open file";
+}
 
-	cout << "Max Value: " << maxValue << endl; 
-	cout << "Min Value: " << minValue << endl;
+void tranferAndComposite() {
+	for (int i=0; i<SIZE; i++) {
+		for (int j=0; j<SIZE; j++) {
+			double compositeOpacity, compositeBlue, compositeGreen;
+			for (int k=0; k<SIZE; k++) {
+				double dataBlue = (dataDensity[i][j][k] - minValue) / (maxValue - minValue);
+				double dataGreen = 1 - dataBlue;
+				if (k == 0) {
+					compositeOpacity = opacity;
+					compositeBlue = dataBlue;
+					compositeGreen = dataGreen;
+				}
+				compositeOpacity = opacity + compositeOpacity * (1 - opacity);
+				compositeBlue = dataBlue + compositeBlue * (1 - compositeOpacity);
+				compositeGreen = dataGreen + compositeGreen * (1 - compositeOpacity);
+			}
+			dataColor[i][j][0] = 0;
+			dataColor[i][j][1] = compositeGreen;
+			dataColor[i][j][2] = compositeBlue;
+			dataColor[i][j][3] = compositeOpacity;
+		}
+	}
+}
+
+void resample() {
+
+	double delta = double(SIZE)/IMGSIZE;
+
+	for (int i=0; i<IMGSIZE; i++) {
+
+		int a1 = ceil(i * delta);
+		double a2 = a1 - i * delta;
+		
+		int b1 = floor((i+1) * delta);
+		double b2 = (i+1) * delta - b1;
+		
+		for (int j=0; j<IMGSIZE; j++) {
+
+				int c1 = ceil(j * delta);
+				double c2 = c1 - j * delta;
+				
+				int d1 = floor((j+1) * delta);
+				double d2 = (j+1) * delta - d1;
+
+				double dataGreen, dataBlue, dataOpacity;
+
+				if (a1 > b1 && c1 > d1) {
+					dataGreen = pow(delta,2)*dataColor[b1][d1][1];
+					dataBlue = pow(delta,2)*dataColor[b1][d1][2];
+					dataOpacity = pow(delta,2)*dataColor[b1][d1][3];
+				}
+				else if (a1 > b1) {
+					dataGreen = delta*c2*dataColor[b1][c1-1][1] + delta*d2*dataColor[b1][d1][1];
+					dataBlue = delta*c2*dataColor[b1][c1-1][2] + delta*d2*dataColor[b1][d1][2];
+					dataOpacity = delta*c2*dataColor[b1][c1-1][3] + delta*d2*dataColor[b1][d1][3];
+				}
+				else if (c1 > d1) {
+					dataGreen = a2*delta*dataColor[a1-1][d1][1] + b2*delta*dataColor[b1][d1][1];
+					dataBlue = a2*delta*dataColor[a1-1][d1][2] + b2*delta*dataColor[b1][d1][2];
+					dataOpacity = a2*delta*dataColor[a1-1][d1][3] + b2*delta*dataColor[b1][d1][3];
+				}
+				else {
+					dataGreen = a2*c2*dataColor[a1-1][c1-1][1] + b2*c2*dataColor[b1][c1-1][1] + a2*d2*dataColor[a1-1][d1][1] + b2*d2*dataColor[b1][d1][1];
+					dataBlue = a2*c2*dataColor[a1-1][c1-1][2] + b2*c2*dataColor[b1][c1-1][2] + a2*d2*dataColor[a1-1][d1][2] + b2*d2*dataColor[b1][d1][2];
+					dataOpacity = a2*c2*dataColor[a1-1][c1-1][3] + b2*c2*dataColor[b1][c1-1][3] + a2*d2*dataColor[a1-1][d1][3] + b2*d2*dataColor[b1][d1][3];
+				}
+
+				if (a1 < b1) {
+					for (int k=0; k<b1-a1; k++) {
+						dataGreen = dataGreen + c2*dataColor[a1+k][c1-1][1] + d2*dataColor[a1+k][d1][1];
+						dataBlue = dataBlue + c2*dataColor[a1+k][c1-1][2] + d2*dataColor[a1+k][d1][2];
+						dataOpacity = dataOpacity + c2*dataColor[a1+k][c1-1][3] + d2*dataColor[a1+k][d1][3];
+					}
+				}
+
+				if (c1 < d1) {
+					for (int k=0; k<d1-c1; k++) {
+						dataGreen = dataGreen + a2*dataColor[a1-1][c1+k][1] + b2*dataColor[b1][c1+k][1];
+						dataBlue = dataBlue + a2*dataColor[a1-1][c1+k][2] + b2*dataColor[b1][c1+k][2];
+						dataOpacity = dataOpacity + a2*dataColor[a1-1][c1+k][3] + b2*dataColor[b1][c1+k][3];
+					}
+				}
+
+				if (a1 < b1 && c1 < d1) {
+					for (int p=0; p<b1-a1; p++) {
+						for (int q=0; q<d1-c1; q++) {
+							dataGreen = dataGreen + dataColor[a1+p][c1+q][1];
+							dataBlue = dataBlue + dataColor[a1+p][c1+q][2];
+							dataOpacity = dataOpacity + dataColor[a1+p][c1+q][3];
+						}
+					}
+				}
+
+				imgColor[i][j][0] = 0;
+				imgColor[i][j][1] = dataGreen/pow(delta,2);
+				imgColor[i][j][2] = dataBlue/pow(delta,2);
+				imgColor[i][j][3] = dataOpacity/pow(delta,2);
+
+				cout << i << ", " << j << ",  " << imgColor[i][j][1] << ", " << imgColor[i][j][2] << ", " << imgColor[i][j][3] << endl;
+
+		}
+
+	}
 }
 
 
@@ -61,6 +161,10 @@ void readFile() {
 int main() {
 
 	readFile();
+	tranferAndComposite();
+	resample();
+
+
 
 	return 0;
 
