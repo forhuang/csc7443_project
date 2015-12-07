@@ -29,7 +29,7 @@ double dataDensity[SIZE][SIZE][SIZE];
 double maxValue = 0, minValue = 999;
 
 // The initial opacity is modified from here
-double opacity = 0.5;
+double opacity = 0.1;
 
 double dataColor[SIZE][SIZE][4];
 /*double imgColor[IMGSIZE][IMGSIZE][4];*/
